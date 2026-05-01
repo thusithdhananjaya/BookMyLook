@@ -11,6 +11,7 @@ import BookingStep2 from './BookingStep2';
 import BookingStep3 from './BookingStep3';
 import BookingStep4 from './BookingStep4';
 import BookingSuccess from './BookingSuccess';
+import PaymentSuccess from './PaymentSuccess';
 import AdminLoginPage from './AdminLoginPage';
 import AdminDashboard from './AdminDashboard';
 import AdminAppointments from './AdminAppointments';
@@ -48,6 +49,7 @@ function App() {
             <Route path="/book-step3" element={<ProtectedCustomerRoute><BookingStep3 /></ProtectedCustomerRoute>} />
             <Route path="/book-step4" element={<ProtectedCustomerRoute><BookingStep4 /></ProtectedCustomerRoute>} />
             <Route path="/booking-success" element={<ProtectedCustomerRoute><BookingSuccess /></ProtectedCustomerRoute>} />
+            <Route path="/payment-success" element={<ProtectedCustomerRoute><PaymentSuccess /></ProtectedCustomerRoute>} />
 
             <Route path="/admin-dashboard" element={<ProtectedAdminRoute><AdminDashboard /></ProtectedAdminRoute>} />
             <Route path="/admin-appointments" element={<ProtectedAdminRoute><AdminAppointments /></ProtectedAdminRoute>} />

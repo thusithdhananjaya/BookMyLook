@@ -18,6 +18,8 @@ const AdminSettings = () => {
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [salonAddress, setSalonAddress] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
   const [aboutSalon, setAboutSalon] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
   const [logoFile, setLogoFile] = useState(null);
@@ -47,6 +49,8 @@ const AdminSettings = () => {
           setContactPhone(data.contactPhone || '');
           setContactEmail(data.email || '');
           setSalonAddress(data.salonAddress || '');
+          setLatitude(data.latitude || '');
+          setLongitude(data.longitude || '');
           setAboutSalon(data.aboutSalon || '');
           setLogoUrl(data.logoUrl || '');
 
@@ -93,6 +97,8 @@ const AdminSettings = () => {
         salonName: salonName.trim(),
         contactPhone: contactPhone.trim(),
         salonAddress: salonAddress.trim(),
+        latitude: latitude ? parseFloat(latitude) : null,
+        longitude: longitude ? parseFloat(longitude) : null,
         aboutSalon: aboutSalon.trim(),
         operatingHours: {
           monFriOpen: hours.monFriOpen,
@@ -181,6 +187,17 @@ const AdminSettings = () => {
                     <label className="block text-sm font-medium text-text-secondary mb-2">Full Address</label>
                     <textarea value={salonAddress} onChange={(e) => setSalonAddress(e.target.value)} className={`${inputClass} resize-none`} placeholder="Enter your salon's full physical address" rows="3"></textarea>
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-text-secondary mb-2">Latitude</label>
+                      <input value={latitude} onChange={(e) => setLatitude(e.target.value)} className={inputClass} placeholder="e.g., 6.9271" type="number" step="any" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-text-secondary mb-2">Longitude</label>
+                      <input value={longitude} onChange={(e) => setLongitude(e.target.value)} className={inputClass} placeholder="e.g., 79.8612" type="number" step="any" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-secondary -mt-3">Right-click your location on <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary-glow underline">Google Maps</a> to copy coordinates.</p>
                 </div>
                 <div className="space-y-6">
                   <h3 className="text-lg font-semibold text-white tracking-tight">Visual Identity</h3>

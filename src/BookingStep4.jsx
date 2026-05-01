@@ -18,37 +18,83 @@ const BookingStep4 = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // Demo payment modal state
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentStep, setPaymentStep] = useState('form'); // 'form' | 'processing' | 'success'
-  const [cardNumber, setCardNumber] = useState('4242 4242 4242 4242');
-  const [cardExpiry, setCardExpiry] = useState('12/28');
-  const [cardCvv, setCardCvv] = useState('123');
-  const [cardName, setCardName] = useState('');
-
   const finalCost = bookingData.totalCost - bookingData.discount;
 
-  // Wrapper: if online payment, show demo gateway first
-  const handleConfirmClick = () => {
+  // Wrapper: if online payment, save booking then redirect to Stripe
+  const handleConfirmClick = async () => {
     if (paymentMethod === 'online') {
-      setCardName(bookingData.userDetails?.fullName || currentUser?.displayName || '');
-      setPaymentStep('form');
-      setShowPaymentModal(true);
+      if (isSubmitting) return;
+      setIsSubmitting(true);
+      setSubmitError('');
+      try {
+        // Save booking to Firestore first with pending_payment status
+        const bookingDoc = {
+          salonId: bookingData.salonId,
+          salonName: bookingData.salonName,
+          customerId: currentUser.uid,
+          customerName: bookingData.userDetails.fullName || currentUser.displayName || 'Unknown',
+          customerEmail: bookingData.userDetails.email || currentUser.email || '',
+          customerPhone: bookingData.userDetails.phone || '',
+          services: bookingData.services,
+          month: bookingData.month,
+          date: bookingData.date,
+          year: bookingData.year,
+          time: bookingData.time,
+          stylist: bookingData.stylist,
+          totalCost: bookingData.totalCost,
+          discount: bookingData.discount,
+          finalCost: finalCost,
+          usedLoyaltyPoints: bookingData.usePoints,
+          paymentMethod: 'online',
+          paymentStatus: 'pending_payment',
+          specialRequest: bookingData.userDetails.specialRequest || '',
+          status: 'pending_payment',
+          createdAt: serverTimestamp(),
+          noShowRisk: null,
+          noShowRiskLevel: null,
+          noShowFactors: [],
+        };
+
+        const docRef = await addDoc(collection(db, 'bookings'), bookingDoc);
+
+        // Call FastAPI to create Stripe checkout session
+        const response = await fetch('http://localhost:8000/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: finalCost,
+            salon_name: bookingData.salonName || 'BookMyLook Salon',
+            services: bookingData.services.map(s => s.name).join(', '),
+            booking_id: docRef.id,
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to create checkout session');
+        const data = await response.json();
+
+        // Store booking recap in sessionStorage before redirecting
+        sessionStorage.setItem('bookingRecap', JSON.stringify({
+          salonName: bookingData.salonName,
+          services: bookingData.services,
+          month: bookingData.month,
+          date: bookingData.date,
+          year: bookingData.year,
+          time: bookingData.time,
+          stylist: bookingData.stylist,
+          paymentMethod: 'online',
+        }));
+
+        resetBooking();
+        // Redirect to Stripe Checkout
+        window.location.href = data.checkout_url;
+      } catch (err) {
+        console.error('Stripe checkout error:', err);
+        setSubmitError('Payment setup failed. Please try again or choose "Pay at Salon".');
+        setIsSubmitting(false);
+      }
     } else {
       handleConfirmBooking();
     }
-  };
-
-  // Simulate online payment processing
-  const handlePayNow = () => {
-    setPaymentStep('processing');
-    setTimeout(() => {
-      setPaymentStep('success');
-      setTimeout(() => {
-        setShowPaymentModal(false);
-        handleConfirmBooking();
-      }, 1500);
-    }, 2000);
   };
 
   const handleConfirmBooking = async () => {
@@ -372,121 +418,6 @@ const BookingStep4 = () => {
           </div>
         </div>
       </main>
-
-      {/* Demo Payment Gateway Modal */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-          <div className="relative w-full max-w-md bg-[#1A1B26] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-
-            {/* Form Step */}
-            {paymentStep === 'form' && (
-              <>
-                <div className="px-6 py-4 border-b border-white/10 bg-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#6B46C1]/20 rounded-xl flex items-center justify-center">
-                        <span className="material-symbols-outlined text-[#6B46C1]">credit_card</span>
-                      </div>
-                      <div>
-                        <h3 className="text-white font-bold">Secure Payment</h3>
-                        <p className="text-xs text-text-secondary">Demo Gateway — No real charges</p>
-                      </div>
-                    </div>
-                    <button onClick={() => setShowPaymentModal(false)} className="text-text-secondary hover:text-white transition-colors">
-                      <span className="material-symbols-outlined">close</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-6 space-y-5">
-                  {/* Amount */}
-                  <div className="bg-[#6B46C1]/10 border border-[#6B46C1]/20 rounded-xl p-4 text-center">
-                    <p className="text-xs text-text-secondary">Amount to Pay</p>
-                    <p className="text-3xl font-black text-white mt-1">{formatLKR(finalCost)}</p>
-                  </div>
-
-                  {/* Card Number */}
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-text-secondary">Card Number</label>
-                    <div className="relative">
-                      <input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)}
-                        className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-[#6B46C1] focus:ring-1 focus:ring-[#6B46C1] tracking-wider"
-                        placeholder="1234 5678 9012 3456" />
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
-                        <span className="text-xs font-bold text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded">VISA</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expiry + CVV */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-text-secondary">Expiry Date</label>
-                      <input value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)}
-                        className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-[#6B46C1] focus:ring-1 focus:ring-[#6B46C1]"
-                        placeholder="MM/YY" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-text-secondary">CVV</label>
-                      <input value={cardCvv} onChange={(e) => setCardCvv(e.target.value)}
-                        className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-[#6B46C1] focus:ring-1 focus:ring-[#6B46C1]"
-                        placeholder="123" type="password" />
-                    </div>
-                  </div>
-
-                  {/* Cardholder Name */}
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-text-secondary">Cardholder Name</label>
-                    <input value={cardName} onChange={(e) => setCardName(e.target.value)}
-                      className="w-full bg-background-dark border border-white/10 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-[#6B46C1] focus:ring-1 focus:ring-[#6B46C1]"
-                      placeholder="Name on card" />
-                  </div>
-
-                  {/* Security Notice */}
-                  <div className="flex items-center gap-2 text-xs text-text-secondary">
-                    <span className="material-symbols-outlined text-green-400 text-sm">lock</span>
-                    <span>256-bit SSL encrypted. This is a demo — no real payment will be processed.</span>
-                  </div>
-                </div>
-
-                <div className="px-6 py-4 border-t border-white/10 bg-white/5">
-                  <button onClick={handlePayNow}
-                    className="w-full bg-[#6B46C1] hover:bg-[#553c9a] text-white font-bold py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(107,70,193,0.4)]">
-                    Pay {formatLKR(finalCost)}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* Processing Step */}
-            {paymentStep === 'processing' && (
-              <div className="p-12 flex flex-col items-center gap-6">
-                <div className="relative">
-                  <div className="w-16 h-16 border-4 border-[#6B46C1]/30 border-t-[#6B46C1] rounded-full animate-spin"></div>
-                </div>
-                <div className="text-center">
-                  <p className="text-white font-bold text-lg">Processing Payment...</p>
-                  <p className="text-text-secondary text-sm mt-1">Please wait while we verify your transaction.</p>
-                </div>
-              </div>
-            )}
-
-            {/* Success Step */}
-            {paymentStep === 'success' && (
-              <div className="p-12 flex flex-col items-center gap-6">
-                <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center">
-                  <span className="material-symbols-outlined text-green-400 text-5xl">check_circle</span>
-                </div>
-                <div className="text-center">
-                  <p className="text-white font-bold text-lg">Payment Successful!</p>
-                  <p className="text-text-secondary text-sm mt-1">Completing your booking...</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

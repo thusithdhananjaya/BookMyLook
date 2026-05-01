@@ -15,6 +15,10 @@ import joblib
 import pandas as pd
 import numpy as np
 import os
+import stripe
+
+# Stripe test mode configuration
+stripe.api_key = "sk_test_51TSEYLRyHld98HoEcwjbiSW5XdB9saP4VIek0ZHfE6q752AOiZPUvyKLJtVeub66SMgqx5Ehfpx9SUnzFZJljjea008AeIri1M"
 
 app = FastAPI(
     title="BookMyLook AI Service",
@@ -142,6 +146,51 @@ def predict(request: PredictionRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+# ===== STRIPE CHECKOUT =====
+
+class CheckoutRequest(BaseModel):
+    amount: int              # Amount in LKR (e.g., 3500)
+    salon_name: str          # For the checkout description
+    services: str            # Comma-separated service names
+    booking_id: str          # Firestore booking doc ID to track
+
+@app.post("/create-checkout-session")
+def create_checkout_session(request: CheckoutRequest):
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'lkr',
+                    'product_data': {
+                        'name': f'Booking at {request.salon_name}',
+                        'description': request.services,
+                    },
+                    'unit_amount': request.amount * 100,  # Stripe expects cents/smallest currency unit
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=f'http://localhost:5173/payment-success?session_id={{CHECKOUT_SESSION_ID}}&booking_id={request.booking_id}',
+            cancel_url=f'http://localhost:5173/book-step4?cancelled=true',
+        )
+        return {"checkout_url": session.url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
+
+@app.get("/verify-payment/{session_id}")
+def verify_payment(session_id: str):
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        return {
+            "status": session.payment_status,
+            "paid": session.payment_status == "paid",
+            "amount": session.amount_total / 100 if session.amount_total else 0,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
 
 
 if __name__ == "__main__":

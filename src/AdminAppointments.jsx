@@ -6,6 +6,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, addDoc, 
 import AdminLayout from './AdminLayout';
 import { formatLKR } from './utils/formatLKR';
 import { LOYALTY_EARN_RATE, LOYALTY_REDEEM_COST } from './BookingContext';
+import emailjs from '@emailjs/browser';
 
 const AdminAppointments = () => {
   const navigate = useNavigate();
@@ -108,6 +109,30 @@ const AdminAppointments = () => {
             bookingId: bookingId,
             createdAt: serverTimestamp()
           });
+        }
+
+        // --- SEND CONFIRMATION EMAIL ---
+        if (newStatus === 'confirmed' && booking) {
+          try {
+            const customerEmail = booking.userDetails?.email || booking.customerEmail || '';
+            if (customerEmail) {
+              await emailjs.send('service_k9hccem', 'template_i4kcjkf', {
+                customer_name: booking.customerName || booking.userDetails?.fullName || 'Customer',
+                customer_email: customerEmail,
+                salon_name: booking.salonName || 'BookMyLook Salon',
+                booking_date: `${booking.month || ''} ${booking.date || ''}, ${booking.year || ''}`,
+                booking_time: booking.time || '',
+                stylist: booking.stylist || 'Any Available',
+                services: booking.services?.map(s => s.name).join(', ') || 'N/A',
+                payment_method: booking.paymentMethod === 'online' ? 'Paid Online' : 'Pay at Salon',
+                total_cost: formatLKR(booking.finalCost || 0),
+              }, 'NUv66hdRYkdZFuk2P');
+              console.log('Confirmation email sent to:', customerEmail);
+            }
+          } catch (emailErr) {
+            console.warn('Email sending failed (non-blocking):', emailErr);
+            // Email failure should NOT block the booking confirmation
+          }
         }
       }
     } catch (err) {
