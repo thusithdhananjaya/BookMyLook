@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from './firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, onSnapshot, writeBatch, updateDoc } from 'firebase/firestore';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 
 // Sidebar navigation items
@@ -21,6 +21,9 @@ const AdminLayout = ({ activePage, children }) => {
 
   const [salonName, setSalonName] = useState('Loading...');
   const [initials, setInitials] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef(null);
 
   // Fetch salon name for sidebar footer
   useEffect(() => {
@@ -52,6 +55,40 @@ const AdminLayout = ({ activePage, children }) => {
     return () => unsubscribe();
   }, []);
 
+  // Notification listener
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (!user) return;
+      const q = query(collection(db, 'notifications'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+      const unsubNotif = onSnapshot(q, (snap) => {
+        setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsubNotif();
+    });
+    return () => unsub();
+  }, []);
+
+  // Close notification dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifications(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markAllRead = async () => {
+    const unread = notifications.filter(n => !n.read);
+    if (unread.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      unread.forEach(n => batch.update(doc(db, 'notifications', n.id), { read: true }));
+      await batch.commit();
+    } catch (err) { console.error('Error marking read:', err); }
+  };
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -61,13 +98,26 @@ const AdminLayout = ({ activePage, children }) => {
     }
   };
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <div className="bg-background-dark text-white h-screen overflow-hidden flex selection:bg-primary selection:text-white font-display">
-      {/* Sidebar */}
-      <aside className="w-64 h-full bg-card-dark border-r border-white/5 flex flex-col shrink-0 transition-all duration-300 z-20">
-        <div className="p-6 pb-8">
-          <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">BookMyLook</h1>
-          <p className="text-text-secondary text-xs mt-1 tracking-widest uppercase">Admin Console</p>
+      
+      {/* Mobile Overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 bg-black/60 z-30 md:hidden" onClick={() => setMobileMenuOpen(false)}></div>
+      )}
+
+      {/* Sidebar — hidden on mobile, slide-in when hamburger clicked */}
+      <aside className={`fixed md:static inset-y-0 left-0 w-64 h-full bg-card-dark border-r border-white/5 flex flex-col shrink-0 transition-transform duration-300 z-40 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-6 pb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">BookMyLook</h1>
+            <p className="text-text-secondary text-xs mt-1 tracking-widest uppercase">Admin Console</p>
+          </div>
+          <button onClick={() => setMobileMenuOpen(false)} className="md:hidden text-text-secondary hover:text-white">
+            <span className="material-symbols-outlined">close</span>
+          </button>
         </div>
 
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
@@ -76,7 +126,7 @@ const AdminLayout = ({ activePage, children }) => {
             return (
               <button
                 key={item.key}
-                onClick={() => navigate(item.path)}
+                onClick={() => { navigate(item.path); setMobileMenuOpen(false); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
                   isActive
                     ? 'bg-primary/20 border border-primary/50 shadow-glow text-white'
@@ -114,6 +164,14 @@ const AdminLayout = ({ activePage, children }) => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Mobile Header Bar */}
+        <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-white/5 bg-card-dark shrink-0">
+          <button onClick={() => setMobileMenuOpen(true)} className="text-white p-1">
+            <span className="material-symbols-outlined text-2xl">menu</span>
+          </button>
+          <h1 className="text-lg font-bold">BookMyLook</h1>
+          <div className="w-8"></div>
+        </div>
         {children}
       </main>
     </div>

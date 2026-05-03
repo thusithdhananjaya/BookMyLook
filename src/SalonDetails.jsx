@@ -24,6 +24,14 @@ const SalonDetails = () => {
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
 
+  // AI Style Recommender state
+  const [showStyleModal, setShowStyleModal] = useState(false);
+  const [styleStep, setStyleStep] = useState('upload'); // 'upload' | 'analyzing' | 'results' | 'error'
+  const [styleError, setStyleError] = useState('');
+  const [styleResult, setStyleResult] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+
   // Check if this salon is saved by the current user
   useEffect(() => {
     const checkSaved = async () => {
@@ -53,6 +61,74 @@ const SalonDetails = () => {
     } catch (err) {
       console.error('Error toggling save:', err);
     }
+  };
+
+  // AI Style Recommender handlers
+  const openStyleModal = () => {
+    setStyleStep('upload');
+    setStyleError('');
+    setStyleResult(null);
+    setSelectedImage(null);
+    setImagePreview('');
+    setShowStyleModal(true);
+  };
+
+  const handleStyleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setStyleError('Please select an image file.'); return; }
+    if (file.size > 10 * 1024 * 1024) { setStyleError('Image must be smaller than 10MB.'); return; }
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+    setStyleError('');
+  };
+
+  const handleAnalyzeFace = async () => {
+    if (!selectedImage) { setStyleError('Please select a photo first.'); return; }
+    setStyleStep('analyzing');
+    setStyleError('');
+
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(selectedImage);
+      });
+
+      // Run API call and minimum delay in parallel
+      const [response] = await Promise.all([
+        fetch('http://localhost:8000/analyze-face', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64 }),
+        }),
+        new Promise(resolve => setTimeout(resolve, 3500)), // Minimum 3.5 second analyzing animation
+      ]);
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Analysis failed');
+      }
+
+      const result = await response.json();
+      setStyleResult(result);
+      setStyleStep('results');
+    } catch (err) {
+      console.error('Face analysis error:', err);
+      setStyleError(err.message || 'Could not analyse your photo. Please try a different front-facing photo with good lighting.');
+      setStyleStep('error');
+    }
+  };
+
+  const getMatchingLookbookPhotos = () => {
+    if (!styleResult || !lookbookPhotos.length) return [];
+    return lookbookPhotos.filter(p =>
+      styleResult.recommended_categories.some(cat =>
+        p.category?.toLowerCase().includes(cat.toLowerCase()) ||
+        cat.toLowerCase().includes(p.category?.toLowerCase() || '')
+      )
+    ).slice(0, 6);
   };
 
   // Fetch salon info, services, and lookbook
@@ -404,12 +480,210 @@ const SalonDetails = () => {
         </div>
       </main>
 
-      {/* AI FAB */}
+      {/* AI Style Recommender FAB */}
       <div className="fixed bottom-6 right-6 z-50">
-        <button className="flex items-center justify-center w-14 h-14 rounded-full bg-[#6B46C1] text-white shadow-[0_0_20px_rgba(107,70,193,0.4)] hover:bg-[#553C9A] hover:scale-110 transition-all duration-300">
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+        <button onClick={openStyleModal} className="flex items-center gap-2 px-5 py-3.5 rounded-full bg-[#6B46C1] text-white shadow-[0_0_25px_rgba(107,70,193,0.5)] hover:bg-[#553C9A] hover:scale-105 transition-all duration-300 font-bold text-sm">
+          <span className="material-symbols-outlined">auto_awesome</span>
+          Find Your Look
         </button>
       </div>
+
+      {/* AI Style Recommender Modal */}
+      {showStyleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowStyleModal(false)}></div>
+          <div className="relative w-full max-w-lg bg-[#1A1B26] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-white/10 bg-gradient-to-r from-[#6B46C1]/20 to-transparent">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#6B46C1]/30 rounded-xl flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[#6B46C1]">auto_awesome</span>
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold">AI Style Recommender</h3>
+                    <p className="text-xs text-[#A0AEC0]">Powered by Face Shape Analysis</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowStyleModal(false)} className="text-[#A0AEC0] hover:text-white transition-colors">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto">
+
+              {/* UPLOAD STEP */}
+              {styleStep === 'upload' && (
+                <div className="p-6 space-y-5">
+                  <div className="bg-[#6B46C1]/10 border border-[#6B46C1]/20 rounded-xl p-4">
+                    <p className="text-sm text-[#A0AEC0] leading-relaxed">
+                      <span className="text-[#6B46C1] font-bold">How it works:</span> Upload a selfie and our AI will analyse your face shape to recommend hairstyles and services that complement your features from this salon's portfolio.
+                    </p>
+                  </div>
+
+                  {/* Upload Area */}
+                  <div>
+                    <label className="block cursor-pointer">
+                      <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${imagePreview ? 'border-[#6B46C1]/50 bg-[#6B46C1]/5' : 'border-white/20 hover:border-[#6B46C1]/50 hover:bg-[#6B46C1]/5'}`}>
+                        {imagePreview ? (
+                          <div className="flex flex-col items-center gap-3">
+                            <img src={imagePreview} alt="Preview" className="w-40 h-40 rounded-2xl object-cover border-2 border-[#6B46C1]/30" />
+                            <p className="text-sm text-[#A0AEC0]">Click to change photo</p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="w-16 h-16 bg-[#6B46C1]/20 rounded-full flex items-center justify-center">
+                              <span className="material-symbols-outlined text-[#6B46C1] text-3xl">face</span>
+                            </div>
+                            <p className="text-white font-semibold">Upload Your Selfie</p>
+                            <p className="text-xs text-[#A0AEC0]">JPG or PNG, max 10MB</p>
+                          </div>
+                        )}
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleStyleImageSelect} />
+                    </label>
+                  </div>
+
+                  {/* Tips */}
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                    <p className="text-xs text-yellow-300/80 flex items-start gap-2">
+                      <span className="material-symbols-outlined text-sm mt-0.5">tips_and_updates</span>
+                      For best results, use a front-facing photo in good lighting without heavy filters or glasses.
+                    </p>
+                  </div>
+
+                  {styleError && (
+                    <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-xl text-center">{styleError}</div>
+                  )}
+
+                  <button onClick={handleAnalyzeFace} disabled={!selectedImage}
+                    className={`w-full py-3 rounded-xl font-bold transition-all ${selectedImage ? 'bg-[#6B46C1] text-white hover:bg-[#553C9A] shadow-[0_0_20px_rgba(107,70,193,0.3)]' : 'bg-gray-700 text-gray-400 cursor-not-allowed'}`}>
+                    Analyse My Face Shape
+                  </button>
+                </div>
+              )}
+
+              {/* ANALYZING STEP */}
+              {styleStep === 'analyzing' && (
+                <div className="p-12 flex flex-col items-center gap-6">
+                  <div className="relative">
+                    <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-[#6B46C1]/30">
+                      <img src={imagePreview} alt="" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="absolute inset-0 w-20 h-20 border-4 border-transparent border-t-[#6B46C1] rounded-full animate-spin"></div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-white font-bold text-lg">Analysing Your Features...</p>
+                    <p className="text-[#A0AEC0] text-sm mt-2">Our AI is mapping 468 facial landmarks to determine your face shape.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ERROR STEP */}
+              {styleStep === 'error' && (
+                <div className="p-8 flex flex-col items-center gap-5 text-center">
+                  <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined text-red-400 text-3xl">sentiment_dissatisfied</span>
+                  </div>
+                  <div>
+                    <p className="text-white font-bold">Couldn't Detect Your Face</p>
+                    <p className="text-sm text-[#A0AEC0] mt-2">{styleError || 'Please try a clearer front-facing photo with good lighting.'}</p>
+                  </div>
+                  <button onClick={() => { setStyleStep('upload'); setStyleError(''); }}
+                    className="bg-[#6B46C1] text-white font-bold px-6 py-2.5 rounded-xl hover:bg-[#553C9A] transition-all">
+                    Try Another Photo
+                  </button>
+                </div>
+              )}
+
+              {/* RESULTS STEP */}
+              {styleStep === 'results' && styleResult && (
+                <div className="p-6 space-y-6">
+                  {/* Face Shape Result */}
+                  <div className="text-center">
+                    <div className="inline-flex items-center gap-2 bg-[#6B46C1]/20 border border-[#6B46C1]/30 rounded-full px-5 py-2 mb-3">
+                      <span className="material-symbols-outlined text-[#6B46C1] text-sm">auto_awesome</span>
+                      <span className="text-sm font-bold text-[#6B46C1]">{Math.round(styleResult.confidence * 100)}% Confidence</span>
+                    </div>
+                    <h3 className="text-2xl font-black text-white">Your Face Shape: <span className="text-[#6B46C1]">{styleResult.face_shape}</span></h3>
+                    <p className="text-sm text-[#A0AEC0] mt-3 leading-relaxed">{styleResult.description}</p>
+                  </div>
+
+                  {/* Recommended Styles */}
+                  <div>
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[#6B46C1] text-lg">thumb_up</span>
+                      Recommended Styles
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {styleResult.recommended_styles.map((style, i) => (
+                        <span key={i} className="bg-[#6B46C1]/15 text-[#6B46C1] border border-[#6B46C1]/20 text-xs font-semibold px-3 py-1.5 rounded-full">{style}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Avoid */}
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                    <p className="text-xs text-red-300/80 flex items-start gap-2">
+                      <span className="material-symbols-outlined text-sm mt-0.5">block</span>
+                      <span><strong>Best to avoid:</strong> {styleResult.avoid}</span>
+                    </p>
+                  </div>
+
+                  {/* Pro Tip */}
+                  <div className="bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-xl p-3">
+                    <p className="text-xs text-[#FFD700]/90 flex items-start gap-2">
+                      <span className="material-symbols-outlined text-sm mt-0.5">lightbulb</span>
+                      <span><strong>Pro Tip:</strong> {styleResult.tips}</span>
+                    </p>
+                  </div>
+
+                  {/* Matching Lookbook Photos */}
+                  {getMatchingLookbookPhotos().length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[#6B46C1] text-lg">photo_library</span>
+                        Looks From This Salon For You
+                      </h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        {getMatchingLookbookPhotos().map((photo) => (
+                          <div key={photo.id} className="relative group rounded-xl overflow-hidden cursor-pointer aspect-square">
+                            <img src={photo.imageUrl} alt={photo.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                              <p className="text-white text-[10px] font-semibold">{photo.title}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No matching lookbook but still show recommendation */}
+                  {getMatchingLookbookPhotos().length === 0 && (
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+                      <p className="text-sm text-[#A0AEC0]">This salon doesn't have portfolio photos in your recommended categories yet, but ask your stylist about the styles above!</p>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => { setStyleStep('upload'); setStyleError(''); }}
+                      className="flex-1 py-2.5 rounded-xl font-semibold text-sm border border-white/10 text-white hover:bg-white/5 transition-colors">
+                      Try Another Photo
+                    </button>
+                    <button onClick={() => { setShowStyleModal(false); handleBookNow(); }}
+                      className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-[#6B46C1] text-white hover:bg-[#553C9A] transition-all shadow-[0_0_15px_rgba(107,70,193,0.3)]">
+                      Book Now
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

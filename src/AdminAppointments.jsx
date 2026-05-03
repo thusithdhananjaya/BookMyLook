@@ -134,6 +134,52 @@ const AdminAppointments = () => {
             // Email failure should NOT block the booking confirmation
           }
         }
+
+        // --- CREATE NOTIFICATION FOR CUSTOMER ---
+        if (booking) {
+          try {
+            const notifData = {
+              userId: booking.customerId,
+              read: false,
+              createdAt: serverTimestamp(),
+            };
+
+            if (newStatus === 'confirmed') {
+              notifData.title = 'Booking Confirmed';
+              notifData.message = `Your booking at ${booking.salonName || 'the salon'} on ${booking.month || ''} ${booking.date || ''} at ${booking.time || ''} has been confirmed.`;
+              notifData.type = 'booking';
+            } else if (newStatus === 'cancelled') {
+              notifData.title = 'Booking Declined';
+              notifData.message = `Your booking at ${booking.salonName || 'the salon'} on ${booking.month || ''} ${booking.date || ''} has been declined.`;
+              notifData.type = 'booking';
+            } else if (newStatus === 'no_show') {
+              notifData.title = 'Marked as No-Show';
+              notifData.message = `You were marked as a no-show for your booking at ${booking.salonName || 'the salon'}.`;
+              notifData.type = 'booking';
+            }
+
+            if (notifData.title) {
+              await addDoc(collection(db, 'notifications'), notifData);
+            }
+
+            // Points earned notification
+            if (newStatus === 'confirmed' && booking.finalCost) {
+              const pointsEarned = Math.floor((booking.finalCost || 0) / LOYALTY_EARN_RATE);
+              if (pointsEarned > 0) {
+                await addDoc(collection(db, 'notifications'), {
+                  userId: booking.customerId,
+                  title: 'Points Earned!',
+                  message: `You earned ${pointsEarned} loyalty points from your booking at ${booking.salonName || 'the salon'}.`,
+                  type: 'loyalty',
+                  read: false,
+                  createdAt: serverTimestamp(),
+                });
+              }
+            }
+          } catch (notifErr) {
+            console.warn('Notification creation failed (non-blocking):', notifErr);
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to update booking status:', err);

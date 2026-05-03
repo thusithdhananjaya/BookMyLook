@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { auth, db } from './firebase';
 import { signOut } from 'firebase/auth';
 import { useAuth } from './AuthContext';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
 
 // Sidebar navigation items — no search tab
 const NAV_ITEMS = [
@@ -26,6 +26,11 @@ const CustomerLayout = ({ activePage, children }) => {
   const [allSalons, setAllSalons] = useState([]);
   const [salonsLoaded, setSalonsLoaded] = useState(false);
   const searchRef = useRef(null);
+
+  // Notification state
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef(null);
 
   const handleLogout = async () => {
     try {
@@ -89,10 +94,37 @@ const CustomerLayout = ({ activePage, children }) => {
       if (searchRef.current && !searchRef.current.contains(e.target)) {
         setShowDropdown(false);
       }
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setShowNotifications(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Real-time notification listener
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(collection(db, 'notifications'), where('userId', '==', currentUser.uid), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error('Notification listener error:', err));
+    return () => unsub();
+  }, [currentUser]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markAllRead = async () => {
+    const unread = notifications.filter(n => !n.read);
+    if (unread.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      unread.forEach(n => batch.update(doc(db, 'notifications', n.id), { read: true }));
+      await batch.commit();
+    } catch (err) {
+      console.error('Error marking notifications read:', err);
+    }
+  };
 
   // Handle Enter key — navigate to results page
   const handleSearchSubmit = (e) => {
@@ -125,8 +157,8 @@ const CustomerLayout = ({ activePage, children }) => {
           <h2 className="text-lg font-bold leading-tight tracking-[-0.015em]">BookMyLook</h2>
           
           {/* Search Bar with Dropdown */}
-          <div ref={searchRef} className="hidden md:block relative ml-8">
-            <div className={`flex items-center bg-white/5 border rounded-xl px-3 py-1.5 w-72 transition-all ${showDropdown && searchQuery ? 'border-brand-purple ring-1 ring-brand-purple' : 'border-border-color focus-within:border-brand-purple'}`}>
+          <div ref={searchRef} className="relative ml-2 md:ml-8 flex-1 md:flex-none">
+            <div className={`flex items-center bg-white/5 border rounded-xl px-3 py-1.5 w-full md:w-72 transition-all ${showDropdown && searchQuery ? 'border-brand-purple ring-1 ring-brand-purple' : 'border-border-color focus-within:border-brand-purple'}`}>
               <span className="material-symbols-outlined text-brand-purple text-[20px]">search</span>
               <input 
                 type="text"
@@ -197,7 +229,7 @@ const CustomerLayout = ({ activePage, children }) => {
           </div>
 
           {/* Categories */}
-          <div className="flex space-x-4 overflow-x-auto pb-1 scrollbar-hide items-end mt-5 px-1">
+          <div className="hidden lg:flex space-x-4 overflow-x-auto pb-1 scrollbar-hide items-end mt-5 px-1">
             {/* Hair */}
             <div className="flex flex-col items-center space-y-1 min-w-[50px] cursor-pointer group">
               <div className="w-11 h-11 p-2.5 rounded-xl bg-[#252836] border border-gray-700 group-hover:border-purple-500 group-hover:border-opacity-100 flex items-center justify-center shadow-sm transition-all duration-200 ease-in-out">
@@ -248,12 +280,61 @@ const CustomerLayout = ({ activePage, children }) => {
 
         {/* Top Right Profile Section */}
         <div className="flex items-center space-x-5">
-          <button className="relative p-2 text-gray-400 hover:text-white transition-colors">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-            </svg>
-            <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-[#1f1d2b]"></span>
-          </button>
+          {/* Notification Bell */}
+          <div ref={notifRef} className="relative">
+            <button onClick={() => { setShowNotifications(!showNotifications); if (!showNotifications) markAllRead(); }} className="relative p-2 text-gray-400 hover:text-white transition-colors">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 rounded-full text-[10px] font-bold text-white px-1 border-2 border-[#1f1d2b]">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <div className="absolute right-0 mt-3 w-80 bg-[#1A1B26] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden animate-[fadeIn_0.15s_ease-out]">
+                <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white">Notifications</h4>
+                  {unreadCount > 0 && <span className="text-xs text-brand-purple font-medium">{unreadCount} new</span>}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <span className="material-symbols-outlined text-3xl text-text-secondary/30">notifications_none</span>
+                      <p className="text-sm text-text-secondary mt-2">No notifications yet</p>
+                    </div>
+                  ) : (
+                    notifications.slice(0, 10).map(notif => (
+                      <div key={notif.id} className={`px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors ${!notif.read ? 'bg-brand-purple/5' : ''}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            notif.type === 'booking' ? 'bg-green-500/20 text-green-400' :
+                            notif.type === 'loyalty' ? 'bg-[#FFD700]/20 text-[#FFD700]' :
+                            notif.type === 'review' ? 'bg-brand-purple/20 text-brand-purple' :
+                            'bg-white/10 text-text-secondary'
+                          }`}>
+                            <span className="material-symbols-outlined text-base">
+                              {notif.type === 'booking' ? 'calendar_month' : notif.type === 'loyalty' ? 'loyalty' : notif.type === 'review' ? 'star' : 'notifications'}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white">{notif.title}</p>
+                            <p className="text-xs text-text-secondary mt-0.5 line-clamp-2">{notif.message}</p>
+                            <p className="text-[10px] text-text-secondary/60 mt-1">
+                              {notif.createdAt?.toDate ? notif.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                            </p>
+                          </div>
+                          {!notif.read && <div className="w-2 h-2 rounded-full bg-brand-purple shrink-0 mt-1.5"></div>}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="relative">
             <button 
@@ -328,10 +409,32 @@ const CustomerLayout = ({ activePage, children }) => {
         </aside>
 
         {/* --- MAIN CONTENT --- */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto custom-scrollbar">
+        <main className="flex-1 p-4 md:p-8 pb-20 md:pb-8 overflow-y-auto custom-scrollbar">
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-xl border-t border-border-color z-40 px-2 py-1.5 safe-area-pb">
+        <div className="flex items-center justify-around">
+          {[
+            { key: 'dashboard', icon: 'grid_view', label: 'Home', path: '/home' },
+            { key: 'my-appointments', icon: 'calendar_month', label: 'Bookings', path: '/my-appointments' },
+            { key: 'saved-salons', icon: 'favorite', label: 'Saved', path: '/saved-salons' },
+            { key: 'booking-history', icon: 'history', label: 'History', path: '/booking-history' },
+            { key: 'profile', icon: 'person', label: 'Profile', path: '/profile' },
+          ].map(item => {
+            const isActive = activePage === item.key;
+            return (
+              <button key={item.key} onClick={() => navigate(item.path)}
+                className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors ${isActive ? 'text-[#8b5cf6]' : 'text-text-secondary'}`}>
+                <span className="material-symbols-outlined text-xl" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>{item.icon}</span>
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };

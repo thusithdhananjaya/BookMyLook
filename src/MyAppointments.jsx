@@ -85,6 +85,20 @@ function MyAppointments() {
       });
       setReviewedBookingIds(prev => new Set([...prev, reviewBooking.id]));
       setReviewModalOpen(false);
+
+      // Notify the salon owner about the new review
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: reviewBooking.salonId,
+          title: 'New Review',
+          message: `${currentUser.displayName || 'A customer'} left a ${reviewRating}-star review for ${reviewBooking.services?.map(s => s.name).join(', ') || 'a service'}.`,
+          type: 'review',
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch (notifErr) {
+        console.warn('Notification failed (non-blocking):', notifErr);
+      }
     } catch (err) {
       console.error('Error submitting review:', err);
       setReviewError('Failed to submit review. Please try again.');

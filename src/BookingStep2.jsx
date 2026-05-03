@@ -18,6 +18,7 @@ const BookingStep2 = () => {
   const [viewDate, setViewDate] = useState(new Date(todayYear, todayMonth, 1));
   const [bookedSlots, setBookedSlots] = useState(new Set());
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [staffList, setStaffList] = useState([]);
 
   const currentYear = viewDate.getFullYear();
   const currentMonth = viewDate.getMonth();
@@ -52,6 +53,21 @@ const BookingStep2 = () => {
       updateDateTime(todayDate, bookingData.time, monthName, todayYear, bookingData.stylist);
     }
   }, []);
+
+  // Fetch staff for this salon
+  useEffect(() => {
+    const fetchStaff = async () => {
+      if (!bookingData.salonId) return;
+      try {
+        const q = query(collection(db, 'staff'), where('salonId', '==', bookingData.salonId));
+        const snap = await getDocs(q);
+        setStaffList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error('Error fetching staff:', err);
+      }
+    };
+    fetchStaff();
+  }, [bookingData.salonId]);
 
   // Fetch booked slots when the selected date changes
   useEffect(() => {
@@ -206,9 +222,10 @@ const BookingStep2 = () => {
                   onChange={(e) => updateDateTime(bookingData.date, bookingData.time, monthName, currentYear, e.target.value)}
                 >
                   <option>Any Available Stylist</option>
-                  <option>Jessica Miller</option>
-                  <option>Michael Chen</option>
-                  <option>Emily Rodriguez</option>
+                  {staffList.map(staff => (
+                    <option key={staff.id} value={staff.name}>{staff.name} — {staff.role}</option>
+                  ))}
+                  {staffList.length === 0 && <option disabled>No staff added yet</option>}
                 </select>
               </div>
 
