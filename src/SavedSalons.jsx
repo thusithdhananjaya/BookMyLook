@@ -5,6 +5,37 @@ import { useAuth } from './AuthContext';
 import { collection, doc, getDocs, getDoc, deleteDoc } from 'firebase/firestore';
 import CustomerLayout from './CustomerLayout';
 
+function SalonThumbnail({ image, fallbackImage, name }) {
+  const [src, setSrc] = useState(image || fallbackImage);
+  const [showInitials, setShowInitials] = useState(!image && !fallbackImage);
+  const initials = (name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
+  const handleError = () => {
+    if (src !== fallbackImage && fallbackImage) {
+      setSrc(fallbackImage); // logoUrl failed, try local placeholder
+    } else {
+      setShowInitials(true); // placeholder also failed, show initials
+    }
+  };
+
+  if (showInitials) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-brand-purple/50 to-brand-purple/10">
+        <span className="text-3xl font-bold text-white/90 tracking-wide">{initials}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={name}
+      onError={handleError}
+      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+    />
+  );
+}
+
 const SavedSalons = () => {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -106,11 +137,11 @@ const SavedSalons = () => {
             <article key={salon.id} className="bg-card-dark rounded-2xl overflow-hidden shadow-2xl flex flex-col h-full border border-white/5 hover:-translate-y-1 hover:border-brand-purple/50 transition-all duration-300">
               {/* Image */}
               <div className="relative h-48 w-full shrink-0 group">
-                <img
-                  src={salon.logoUrl || placeholderImages[idx % placeholderImages.length]}
-                  alt={salon.salonName}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
+  <SalonThumbnail
+    image={salon.logoUrl}
+    fallbackImage={placeholderImages[idx % placeholderImages.length]}
+    name={salon.salonName}
+  />
                 {/* Unsave Heart Button */}
                 <button
                   onClick={() => handleUnsave(salon.id)}

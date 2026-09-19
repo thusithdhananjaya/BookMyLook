@@ -176,3 +176,5 @@ ai-service/*.pyc
 # Environment files
 .env
 .env.local
+
+*.lnk

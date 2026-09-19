@@ -216,12 +216,13 @@ function HomePage() {
               {salons.map((salon, idx) => (
                 <div key={salon.id} onClick={() => navigate(`/salon/${salon.id}`)} className="cursor-pointer transition-transform hover:scale-[1.02]">
                   <SalonCard 
-                    image={salon.logoUrl || placeholderImages[idx % placeholderImages.length]} 
-                    name={salon.salonName || 'Unnamed Salon'} 
-                    desc={salon.aboutSalon?.slice(0, 60) || 'Beauty & grooming services.'} 
-                    rating={salon.avgRating || 'New'} 
-                    reviews={salon.reviewCount || 0} 
-                  />
+  image={salon.logoUrl} 
+  fallbackImage={placeholderImages[idx % placeholderImages.length]}
+  name={salon.salonName || 'Unnamed Salon'} 
+  desc={salon.aboutSalon?.slice(0, 60) || 'Beauty & grooming services.'} 
+  rating={salon.avgRating || 'New'} 
+  reviews={salon.reviewCount || 0} 
+/>
                 </div>
               ))}
             </div>
@@ -280,10 +281,33 @@ function HomePage() {
   );
 }
 
-function SalonCard({ image, name, desc, rating, reviews }) {
+function SalonCard({ image, fallbackImage, name, desc, rating, reviews }) {
+  const [src, setSrc] = useState(image || fallbackImage);
+  const [showInitials, setShowInitials] = useState(!image && !fallbackImage);
+  const initials = (name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
+  const handleError = () => {
+    if (src !== fallbackImage && fallbackImage) {
+      setSrc(fallbackImage); // logoUrl failed, try local placeholder
+    } else {
+      setShowInitials(true); // placeholder also failed, show initials
+    }
+  };
+
   return (
     <div className="group relative overflow-hidden rounded-xl border border-border-color bg-surface backdrop-blur-xl transition-all hover:border-brand-purple/50 hover:shadow-glow-primary-md cursor-pointer">
-      <div className="h-40 bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style={{ backgroundImage: `url(${image})` }}></div>
+      {!showInitials ? (
+        <img
+          src={src}
+          alt={name}
+          onError={handleError}
+          className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+      ) : (
+        <div className="h-40 w-full flex items-center justify-center bg-gradient-to-br from-brand-purple/50 to-brand-purple/10">
+          <span className="text-3xl font-bold text-white/90 tracking-wide">{initials}</span>
+        </div>
+      )}
       <div className="p-4">
         <h3 className="font-bold text-text-primary">{name}</h3>
         <p className="text-sm text-text-secondary">{desc}</p>
@@ -295,5 +319,4 @@ function SalonCard({ image, name, desc, rating, reviews }) {
     </div>
   );
 }
-
 export default HomePage;
